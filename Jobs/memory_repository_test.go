@@ -65,3 +65,18 @@ func TestMemoryJobRepositoryRunJobReportsUnavailableExecutor(t *testing.T) {
 		t.Fatalf("RunJob() error = %v, want ErrSQLNotImplemented", err)
 	}
 }
+
+func TestMemoryJobRepositoryUsesSliceAndKeepsIDsUnique(t *testing.T) {
+	repository := NewMemoryJobRepository()
+
+	if _, err := repository.CreateJob(&Job{Id: 2, Desc: "explicit"}); err != nil {
+		t.Fatalf("CreateJob() with explicit ID error = %v", err)
+	}
+	id, err := repository.CreateJob(&Job{Desc: "automatic"})
+	if err != nil {
+		t.Fatalf("CreateJob() with automatic ID error = %v", err)
+	}
+	if id != 3 {
+		t.Fatalf("automatic ID = %d, want 3", id)
+	}
+}

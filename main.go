@@ -6,7 +6,13 @@ import (
 )
 
 func main() {
-	var jobRepository Jobs.JobResps = Jobs.NewMemoryJobRepository()
+	storage := Jobs.NewMemoryJobRepository()
+	jobRepositoryCache, err := Jobs.NewCachedJobRepository(storage)
+	if err != nil {
+		fmt.Println("Could not initialize job cache:", err)
+		return
+	}
+	var jobRepository Jobs.JobResps = jobRepositoryCache
 
 	sqlJob := &Jobs.Job{
 		Desc:  "Example scheduled SQL job",

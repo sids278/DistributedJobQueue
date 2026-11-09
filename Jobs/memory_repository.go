@@ -17,7 +17,7 @@ var (
 
 type MemoryJobRepository struct {
 	mu     sync.RWMutex
-	jobs   map[int64]*Job
+	jobs   []*Job
 	nextID int64
 }
 
@@ -25,7 +25,7 @@ var _ JobResps = (*MemoryJobRepository)(nil)
 
 func NewMemoryJobRepository() *MemoryJobRepository {
 	return &MemoryJobRepository{
-		jobs:   make(map[int64]*Job),
+		jobs:   make([]*Job, 0),
 		nextID: 1,
 	}
 }
@@ -34,27 +34,22 @@ func (r *MemoryJobRepository) GetJobById(id int64) (*Job, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	job, ok := r.jobs[id]
-	if !ok {
+	index := r.findJobIndex(id)
+	if index == -1 {
 		return nil, ErrJobNotFound
 	}
-	return cloneJob(job), nil
+	return cloneJob(r.jobs[index]), nil
 }
 
 func (r *MemoryJobRepository) GetAllJobs() ([]*Job, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	ids := make([]int64, 0, len(r.jobs))
-	for id := range r.jobs {
-		ids = append(ids, id)
+	jobs := make([]*Job, 0, len(r.jobs))
+	for _, job := range r.jobs {
+		jobs = append(jobs, cloneJob(job))
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-
-	jobs := make([]*Job, 0, len(ids))
-	for _, id := range ids {
-		jobs = append(jobs, cloneJob(r.jobs[id]))
-	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Id < jobs[j].Id })
 	return jobs, nil
 }
 
@@ -68,18 +63,18 @@ func (r *MemoryJobRepository) CreateJob(job *Job) (int64, error) {
 
 	copy := cloneJob(job)
 	if copy.Id == 0 {
-		for r.jobs[r.nextID] != nil {
+		for r.findJobIndex(r.nextID) != -1 {
 			r.nextID++
 		}
 		copy.Id = r.nextID
 		r.nextID++
-	} else if _, exists := r.jobs[copy.Id]; exists {
+	} else if r.findJobIndex(copy.Id) != -1 {
 		return 0, fmt.Errorf("%w: %d", ErrJobAlreadyExists, copy.Id)
 	} else if copy.Id >= r.nextID {
 		r.nextID = copy.Id + 1
 	}
 
-	r.jobs[copy.Id] = copy
+	r.jobs = append(r.jobs, copy)
 	return copy.Id, nil
 }
 
@@ -91,10 +86,11 @@ func (r *MemoryJobRepository) UpdateJob(job *Job) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.jobs[job.Id]; !exists {
+	index := r.findJobIndex(job.Id)
+	if index == -1 {
 		return ErrJobNotFound
 	}
-	r.jobs[job.Id] = cloneJob(job)
+	r.jobs[index] = cloneJob(job)
 	return nil
 }
 
@@ -102,10 +98,13 @@ func (r *MemoryJobRepository) DeleteJob(id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.jobs[id]; !exists {
+	index := r.findJobIndex(id)
+	if index == -1 {
 		return ErrJobNotFound
 	}
-	delete(r.jobs, id)
+	copy(r.jobs[index:], r.jobs[index+1:])
+	r.jobs[len(r.jobs)-1] = nil
+	r.jobs = r.jobs[:len(r.jobs)-1]
 	return nil
 }
 
@@ -124,6 +123,15 @@ func (r *MemoryJobRepository) isSchedulable() bool {
 func cloneJob(job *Job) *Job {
 	copy := *job
 	return &copy
+}
+
+func (r *MemoryJobRepository) findJobIndex(id int64) int {
+	for i, job := range r.jobs {
+		if job.Id == id {
+			return i
+		}
+	}
+	return -1
 }
 
 func RunSqlJob(query string) error {

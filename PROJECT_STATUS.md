@@ -6,7 +6,7 @@ Last updated: 2026-10-26
 
 This workspace currently contains two related but separate pieces:
 
-1. A small in-memory job repository and SQL-job experiment in `Jobs/`.
+1. An in-memory job repository, read-through cache, and SQL-job experiment in `Jobs/`.
 2. A Redis-backed distributed queue implementation under `_reference/`.
 
 The root program in `main.go` currently demonstrates the first piece. It does
@@ -20,16 +20,19 @@ Run it with:
 go run .
 ```
 
-`main.go` creates a `MemoryJobRepository`, stores a sample `Job` containing
-`SELECT 1`, fetches it back, and prints its ID and query. The repository is
-assigned to a `Jobs.JobResps` interface variable, so the example also shows the
-interface in use.
+`main.go` creates a `MemoryJobRepository` backed by a Go slice, wraps it in a
+`CachedJobRepository`, stores a sample `Job` containing `SELECT 1`, fetches it
+through the cache, and prints its ID and query. The cache is assigned to a
+`Jobs.JobResps` interface variable, so the example also shows the interface in
+use.
 
 The in-memory repository in [`Jobs/memory_repository.go`](./Jobs/memory_repository.go)
 supports create, read, list, update, and delete operations. It assigns IDs,
-protects its map for concurrent access, and returns copies of stored jobs.
-Its contents exist only while the process is running; they are not persisted
-between runs.
+protects its slice for concurrent access, and returns copies of stored jobs.
+The cache in [`Jobs/cached_repository.go`](./Jobs/cached_repository.go) caches
+job lookups by ID. Writes made through the cache update or invalidate its
+entries. Both storage and cache are process-local and are lost when the
+program exits.
 
 ## SQL execution status
 
@@ -68,9 +71,11 @@ components to `Jobs` yet.
 
 ## Tests and build
 
-The `Jobs` package has tests for in-memory CRUD behavior and for the explicit
-“SQL executor not configured” result in
-[`Jobs/memory_repository_test.go`](./Jobs/memory_repository_test.go).
+The `Jobs` package has tests for slice-backed CRUD behavior and for the
+explicit “SQL executor not configured” result in
+[`Jobs/memory_repository_test.go`](./Jobs/memory_repository_test.go), as well as
+cache reads and cache consistency in
+[`Jobs/cached_repository_test.go`](./Jobs/cached_repository_test.go).
 
 Run the Go tests and build from the repository root:
 
